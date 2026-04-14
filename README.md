@@ -28,21 +28,30 @@ stuff you want to unit-test without touching the filesystem or the system clock.
 Define a capability per dependency as its own type class:
 
 ```haskell
-class Monad m => MonadHabitStore m where
+class MonadHabitStore m where
   loadHabits :: m [Habit]
   saveHabits :: [Habit] -> m ()
 
-class Monad m => MonadClock m where
+class MonadClock m where
   currentDay :: m Day
 
-class Monad m => MonadLogger m where
+class MonadLogger m where
   logInfo :: Text -> m ()
 ```
 
-Then your business logic functions get constraints like:
+Note that we deliberately leave `Monad m =>` off the class heads. Each class
+describes a single capability ("a thing that can give you a day") and doesn't
+inherently need to be a monad — a function that only calls `currentDay` once
+with no sequencing genuinely won't need `Monad m` at all. The `Monad`
+constraint then shows up only on functions that actually sequence effects with
+`do`-notation, where GHC requires it anyway. This is the modern style; older
+`mtl` classes like `MonadReader` have `Monad m =>` in the head for historical
+reasons, but newer designs tend to drop it.
+
+So your business logic functions get constraints like:
 
 ```haskell
-checkHabit :: (MonadHabitStore m, MonadClock m, MonadLogger m)
+checkHabit :: (Monad m, MonadHabitStore m, MonadClock m, MonadLogger m)
            => HabitName -> m ()
 ```
 
@@ -98,7 +107,7 @@ checkHabit :: HabitName -> ReaderT Env IO ()
 which hardcodes *how* effects are performed, you write:
 
 ```haskell
-checkHabit :: (MonadHabitStore m, MonadClock m, MonadLogger m)
+checkHabit :: (Monad m, MonadHabitStore m, MonadClock m, MonadLogger m)
            => HabitName -> m ()
 ```
 
@@ -134,7 +143,7 @@ calculateStreak :: [CheckIn] -> Day -> Int
 calculateStreak checkIns today = ...
 
 -- Effectful logic, constraints declare what's needed
-checkHabit :: (MonadHabitStore m, MonadClock m, MonadLogger m)
+checkHabit :: (Monad m, MonadHabitStore m, MonadClock m, MonadLogger m)
            => HabitName -> m ()
 checkHabit name = do
   today   <- currentDay
@@ -147,3 +156,4 @@ checkHabit name = do
 `markChecked` is a pure function. `checkHabit` orchestrates effects but
 contains no IO itself — it's polymorphic. The IO happens only when you pick a
 concrete `m` and run it.
+
